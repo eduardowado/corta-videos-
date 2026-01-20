@@ -4,108 +4,81 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="coi-serviceworker.js"></script>
-    <title>Cortador Multi-Clip ✂️</title>
+    <title>Cortador Pizza V3 (Diagnóstico)</title>
     <style>
-        body { font-family: sans-serif; background-color: #f0f2f5; padding: 20px; max-width: 600px; margin: 0 auto; }
-        .container { background-color: #fff; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; }
-        h1 { color: #333; margin-bottom: 1rem; }
-        
-        /* Inputs */
-        input[type="file"] { margin-bottom: 1rem; width: 100%; padding: 10px; background: #eee; border-radius: 8px; }
-        .time-inputs { display: flex; gap: 10px; justify-content: center; margin-bottom: 1rem; background: #f9f9f9; padding: 15px; border-radius: 8px; }
-        .input-group { display: flex; flex-direction: column; text-align: left; }
-        .input-group label { font-size: 12px; font-weight: bold; color: #666; margin-bottom: 4px; }
-        input[type="number"] { padding: 8px; border: 1px solid #ccc; border-radius: 6px; width: 80px; font-size: 16px; }
-        
-        /* Botón Principal */
-        button { background-color: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer; width: 100%; font-weight: bold; transition: 0.2s; }
-        button:hover { background-color: #0056b3; transform: scale(1.02); }
-        button:disabled { background-color: #ccc; transform: none; }
-        
-        #status { margin-top: 1rem; font-weight: bold; color: #555; min-height: 20px; }
-
-        /* Galería de Resultados */
-        #gallery { margin-top: 2rem; display: flex; flex-direction: column; gap: 15px; }
-        
-        .clip-card {
-            background: #fff;
-            border: 2px solid #eee;
-            border-radius: 8px;
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            animation: fadeIn 0.5s;
+        body { font-family: sans-serif; background: #f0f2f5; padding: 15px; text-align: center; }
+        .container { background: #fff; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 600px; margin: 0 auto; }
+        h1 { margin-bottom: 1rem; color: #333; font-size: 1.5rem; }
+        input, button { width: 100%; margin-bottom: 10px; padding: 10px; border-radius: 8px; border: 1px solid #ccc; box-sizing: border-box; }
+        button { background: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; }
+        button:disabled { background: #ccc; }
+        #console-log { 
+            background: #222; color: #0f0; padding: 10px; 
+            border-radius: 8px; font-family: monospace; font-size: 12px; 
+            text-align: left; height: 150px; overflow-y: scroll; margin-top: 15px;
+            display: none; /* Se oculta si no hay errores */
         }
-        .clip-title { font-weight: bold; color: #333; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-        .btn-group { display: flex; gap: 10px; }
-        .dl-btn {
-            flex: 1;
-            text-decoration: none;
-            padding: 10px;
-            border-radius: 6px;
-            color: white;
-            font-size: 14px;
-            text-align: center;
-        }
-        .horiz { background-color: #28a745; } /* Verde */
-        .vert { background-color: #6f42c1; }  /* Morado */
-
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .error-msg { color: #ff4444; }
+        .clip-card { border: 1px solid #ddd; padding: 10px; margin-top: 10px; border-radius: 8px; background: #fafafa; }
+        .btn-group { display: flex; gap: 5px; margin-top: 5px; }
+        .dl-btn { flex: 1; padding: 8px; background: #28a745; color: white; text-decoration: none; border-radius: 4px; font-size: 14px; }
+        .vert { background: #6f42c1; }
     </style>
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
 </head>
 <body>
     <div class="container">
-        <h1>🍕 Cortador Infinito</h1>
+        <h1>🍕 Cortador Pizza V3</h1>
         
         <input type="file" id="uploader" accept="video/*">
         
-        <div class="time-inputs">
-            <div class="input-group">
-                <label>Inicio (segundos)</label>
-                <input type="number" id="start" placeholder="0">
-            </div>
-            <div class="input-group">
-                <label>Fin (segundos)</label>
-                <input type="number" id="end" placeholder="10">
-            </div>
+        <div style="display: flex; gap: 10px;">
+            <input type="number" id="start" placeholder="Inicio (seg)" value="0">
+            <input type="number" id="end" placeholder="Fin (seg)" value="5">
         </div>
 
-        <button id="processBtn" onclick="procesarVideo()">➕ Generar Clip</button>
+        <button id="processBtn" onclick="procesarVideo()">✂️ Generar Clip</button>
+        <div id="status">Esperando video...</div>
         
-        <div id="status">Cargando sistema...</div>
-
+        <div id="console-log"></div>
         <div id="gallery"></div>
     </div>
 
     <script>
         const { createFFmpeg, fetchFile } = FFmpeg;
-        let ffmpeg = null;
-        let videoCargado = false; // Para saber si ya subimos el video a memoria
+        // Activamos log: true para ver qué pasa en el cerebro del programa
+        let ffmpeg = createFFmpeg({ log: true });
+        let videoCargado = false;
 
         const statusText = document.getElementById('status');
-        const processBtn = document.getElementById('processBtn');
+        const logger = document.getElementById('console-log');
         const gallery = document.getElementById('gallery');
 
-        // Inicializar FFmpeg
+        // Función para mostrar mensajes técnicos en pantalla
+        function log(msg, esError = false) {
+            logger.style.display = 'block';
+            const linea = document.createElement('div');
+            linea.textContent = '> ' + msg;
+            if (esError) linea.className = 'error-msg';
+            logger.prepend(linea);
+        }
+
         async function init() {
             try {
-                ffmpeg = createFFmpeg({ log: false }); // log false para que sea más rápido
                 await ffmpeg.load();
-                statusText.innerHTML = '✅ Sistema listo. Sube tu video.';
+                statusText.innerHTML = '✅ Sistema listo.';
             } catch (e) {
-                statusText.innerHTML = '❌ Error. Tu navegador no es compatible.';
-                console.error(e);
+                statusText.innerHTML = '❌ Error de Carga (Seguridad)';
+                log('Error iniciando FFmpeg: ' + e.message, true);
+                log('POSIBLE SOLUCIÓN: Verifica que subiste el archivo "coi-serviceworker.js" a GitHub.', true);
             }
         }
         init();
 
-        // Detectar si el usuario cambió de video
         document.getElementById('uploader').addEventListener('change', () => {
-            videoCargado = false; // Resetear bandera
-            gallery.innerHTML = ''; // Limpiar galería anterior
-            statusText.innerHTML = '✅ Nuevo video seleccionado.';
+            videoCargado = false;
+            statusText.innerHTML = '✅ Video seleccionado.';
+            logger.innerHTML = ''; // Limpiar logs viejos
         });
 
         async function procesarVideo() {
@@ -113,77 +86,72 @@
             const start = document.getElementById('start').value;
             const end = document.getElementById('end').value;
 
-            if (!files.length) return alert("¡Selecciona un video primero!");
-            if (!start || !end) return alert("¡Pon los tiempos!");
-            if (parseFloat(start) >= parseFloat(end)) return alert("El inicio debe ser menor al fin.");
-
-            processBtn.disabled = true;
-            statusText.innerHTML = '⏳ Procesando clip...';
+            if (!files.length) return alert("Sube un video");
+            
+            document.getElementById('processBtn').disabled = true;
+            statusText.innerHTML = '⏳ Procesando...';
 
             try {
-                const inName = 'input_video.mp4';
+                if (!ffmpeg.isLoaded()) await init();
 
-                // Solo cargamos el video en memoria SI es la primera vez
                 if (!videoCargado) {
-                    statusText.innerHTML = '📦 Cargando video en memoria (solo una vez)...';
-                    ffmpeg.FS('writeFile', inName, await fetchFile(files[0]));
+                    statusText.innerHTML = '📦 Cargando video en memoria (Esto gasta RAM)...';
+                    log('Subiendo archivo a memoria...');
+                    await ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(files[0]));
                     videoCargado = true;
                 }
 
-                // Generamos nombres únicos para que no se sobrescriban
-                const timestamp = new Date().getTime();
-                const outH = `clip_${start}-${end}_H_${timestamp}.mp4`;
-                const outV = `clip_${start}-${end}_V_${timestamp}.mp4`;
+                log(`Cortando de ${start}s a ${end}s...`);
+                
+                // Nombres únicos
+                const id = Date.now();
+                const outH = `h_${id}.mp4`;
+                const outV = `v_${id}.mp4`;
 
-                // 1. Corte Horizontal (Rápido)
-                statusText.innerHTML = `✂️ Cortando del seg ${start} al ${end}...`;
-                await ffmpeg.run('-i', inName, '-ss', start, '-to', end, '-c', 'copy', outH);
+                // Procesos
+                await ffmpeg.run('-i', 'input.mp4', '-ss', start, '-to', end, '-c', 'copy', outH);
+                await ffmpeg.run('-i', 'input.mp4', '-ss', start, '-to', end, '-vf', 'crop=ih*(9/16):ih,scale=720:1280', '-c:v', 'libx264', '-preset', 'ultrafast', outV);
 
-                // 2. Corte Vertical (Zoom)
-                statusText.innerHTML = `📱 Creando versión vertical...`;
-                await ffmpeg.run('-i', inName, '-ss', start, '-to', end, '-vf', 'crop=ih*(9/16):ih,scale=720:1280', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'copy', outV);
-
-                // 3. Crear botones y agregarlos a la galería
-                agregarAHistorial(start, end, outH, outV);
-
-                // Limpiar archivos generados de memoria (para no llenar la RAM)
-                // OJO: No borramos el input, solo los resultados
-                ffmpeg.FS('unlink', outH);
-                ffmpeg.FS('unlink', outV);
-
-                statusText.innerHTML = '✨ ¡Clip creado! Puedes hacer otro.';
+                agregarTarjeta(start, end, outH, outV);
+                
+                statusText.innerHTML = '✨ ¡Listo!';
 
             } catch (e) {
                 console.error(e);
-                statusText.innerHTML = '❌ Ocurrió un error. Intenta tiempos más cortos.';
+                statusText.innerHTML = '❌ Falló el proceso';
+                log('ERROR CRÍTICO: ' + e.message, true);
+                
+                if (e.message.includes("SharedArrayBuffer")) {
+                    alert("⚠️ ERROR DE SEGURIDAD: Faltan permisos.\n\nAsegúrate de que el archivo 'coi-serviceworker.js' esté en tu GitHub junto al index.html");
+                } else if (e.message.includes("memory")) {
+                    alert("⚠️ ERROR DE MEMORIA: Tu celular se quedó sin RAM.\n\nIntenta con un video más ligero o cierra otras apps.");
+                } else {
+                    alert("Error desconocido: Mira el cuadro negro abajo para más detalles.");
+                }
             } finally {
-                processBtn.disabled = false;
+                document.getElementById('processBtn').disabled = false;
             }
         }
 
-        function agregarAHistorial(start, end, nombreH, nombreV) {
-            // Leer los archivos generados antes de borrarlos
-            const dataH = ffmpeg.FS('readFile', nombreH);
-            const dataV = ffmpeg.FS('readFile', nombreV);
+        function agregarTarjeta(start, end, nH, nV) {
+            const dH = ffmpeg.FS('readFile', nH);
+            const dV = ffmpeg.FS('readFile', nV);
+            
+            const uH = URL.createObjectURL(new Blob([dH.buffer], {type: 'video/mp4'}));
+            const uV = URL.createObjectURL(new Blob([dV.buffer], {type: 'video/mp4'}));
 
-            // Crear URLs
-            const urlH = URL.createObjectURL(new Blob([dataH.buffer], { type: 'video/mp4' }));
-            const urlV = URL.createObjectURL(new Blob([dataV.buffer], { type: 'video/mp4' }));
-
-            // Crear tarjeta HTML
-            const card = document.createElement('div');
-            card.className = 'clip-card';
-            card.innerHTML = `
-                <div class="clip-title">⏱️ Clip: ${start}s a ${end}s</div>
+            const div = document.createElement('div');
+            div.className = 'clip-card';
+            div.innerHTML = `
+                <div>⏱️ ${start}-${end}s</div>
                 <div class="btn-group">
-                    <a href="${urlH}" download="Clip_Horiz_${start}_${end}.mp4" class="dl-btn horiz">⬇️ Original</a>
-                    <a href="${urlV}" download="Clip_Vert_${start}_${end}.mp4" class="dl-btn vert">⬇️ Vertical</a>
+                    <a href="${uH}" download="clip_h.mp4" class="dl-btn">⬇️ Horiz</a>
+                    <a href="${uV}" download="clip_v.mp4" class="dl-btn vert">⬇️ Vert</a>
                 </div>
             `;
-
-            // Agregar al principio de la lista (lo más nuevo arriba)
-            gallery.prepend(card);
+            gallery.prepend(div);
         }
     </script>
 </body>
 </html>
+
