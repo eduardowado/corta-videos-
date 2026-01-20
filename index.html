@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="coi-serviceworker.js"></script>
+    <title>Cortador de Pizza V2</title>
+    <style>
+        /* ESTILOS (IGUAL QUE ANTES) */
+        body { font-family: sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; padding: 20px; }
+        .container { background-color: #fff; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
+        h1 { color: #333; margin-bottom: 1.5rem; }
+        input[type="file"] { margin-bottom: 1rem; width: 100%; }
+        .time-inputs { display: flex; gap: 10px; justify-content: center; margin-bottom: 1rem; }
+        input[type="number"] { padding: 8px; border: 1px solid #ccc; border-radius: 6px; width: 80px; }
+        button { background-color: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer; width: 100%; margin-top: 10px; }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; }
+        #status { margin-top: 1rem; font-weight: bold; color: #555; }
+        .download-link { display: none; margin-top: 10px; padding: 10px; background-color: #28a745; color: white; text-decoration: none; border-radius: 6px; }
+    </style>
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>🍕 Cortador Pizza Móvil</h1>
+        <input type="file" id="uploader" accept="video/*">
+        <div class="time-inputs">
+            <div><label>Inicio (s):</label><input type="number" id="start" placeholder="0"></div>
+            <div><label>Fin (s):</label><input type="number" id="end" placeholder="10"></div>
+        </div>
+        <button id="processBtn" onclick="procesarVideo()">✂️ Procesar Video</button>
+        <div id="status">Cargando sistema...</div>
+        <a id="dl-horiz" class="download-link">⬇️ Bajar Original</a>
+        <a id="dl-vert" class="download-link" style="background-color: #6f42c1;">⬇️ Bajar Vertical (Zoom)</a>
+    </div>
+
+    <script>
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        let ffmpeg = null;
+        const statusText = document.getElementById('status');
+        const processBtn = document.getElementById('processBtn');
+
+        async function init() {
+            try {
+                ffmpeg = createFFmpeg({ log: true });
+                await ffmpeg.load();
+                statusText.innerHTML = '✅ Listo. Sube un video.';
+            } catch (e) {
+                statusText.innerHTML = '❌ Error. Recarga la página.';
+                console.error(e);
+            }
+        }
+        init();
+
+        async function procesarVideo() {
+            const files = document.getElementById('uploader').files;
+            const start = document.getElementById('start').value;
+            const end = document.getElementById('end').value;
+            if (!files.length || !start || !end) return alert("Faltan datos");
+
+            processBtn.disabled = true;
+            statusText.innerHTML = '⏳ Procesando... (No cierres)';
+            
+            const file = files[0];
+            const inName = 'input.mp4';
+            ffmpeg.FS('writeFile', inName, await fetchFile(file));
+
+            // Horizontal
+            await ffmpeg.run('-i', inName, '-ss', start, '-to', end, '-c', 'copy', 'out_h.mp4');
+            const dataH = ffmpeg.FS('readFile', 'out_h.mp4');
+            configurarBoton('dl-horiz', dataH, 'clip_h.mp4');
+
+            // Vertical (Zoom)
+            await ffmpeg.run('-i', inName, '-ss', start, '-to', end, '-vf', 'crop=ih*(9/16):ih,scale=720:1280', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'copy', 'out_v.mp4');
+            const dataV = ffmpeg.FS('readFile', 'out_v.mp4');
+            configurarBoton('dl-vert', dataV, 'clip_v.mp4');
+
+            statusText.innerHTML = '🎉 ¡Terminado!';
+            processBtn.disabled = false;
+        }
+
+        function configurarBoton(id, data, name) {
+            const btn = document.getElementById(id);
+            btn.href = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+            btn.download = name;
+            btn.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
